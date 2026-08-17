@@ -1,0 +1,20 @@
+# 工具链与构建产物
+tools/
+android-home/
+**/build/
+
+# 第三方 APK 与解包产物
+apk/bilibili.apk
+apk/netease-cloud-music.apk
+apk/zhiyue.apk
+apk/zhiyue-patched.apk
+apk/zhiyue-tv-3.6.6.apk
+apk/fliigo-tv-3.6.6.103124.apk
+apk/zhiyue-decompiled/
+apk/zhiyue-full/
+
+# 测试截图 / UI dump
+apk/*.png
+apk/*.xml
+/board-nav-check.png
+*.tmp

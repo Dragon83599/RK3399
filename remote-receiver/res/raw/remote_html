@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>壁画音响遥控</title>
+<style>
+body{background:#101418;color:#e8eaed;font-family:system-ui,sans-serif;margin:0;padding:16px}
+h1{font-size:20px;margin:0 0 4px}
+#status{color:#9aa0a6;font-size:13px;margin:0 0 16px;min-height:36px;white-space:pre-line}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px}
+.row4{grid-template-columns:1fr 1fr 1fr 1fr}
+.row5{grid-template-columns:1fr 1fr 1fr 1fr 1fr}
+button{background:#20262c;color:#fff;border:1px solid #303a44;border-radius:10px;padding:18px 0;font-size:18px}
+button:active{background:#2e3a45}
+#pad{height:180px;background:#11161b;border:1px solid #303a44;border-radius:10px;margin-bottom:10px;position:relative;touch-action:none;cursor:crosshair;overflow:hidden}
+#pad::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#26313b}
+#pad::after{content:"";position:absolute;top:50%;left:0;right:0;height:1px;background:#26313b}
+#padHeader{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;margin-bottom:8px}
+#padHeader div{font-size:14px;color:#9aa0a6}
+#padMode{padding:8px 14px;font-size:14px;width:auto}
+</style>
+</head>
+<body>
+<h1>壁画音响遥控</h1>
+<div id="status">未连接</div>
+<div class="row">
+<button onclick="cmd('prev')">上一首</button>
+<button id="play" onclick="cmd('toggle')">播放/暂停</button>
+<button onclick="cmd('next')">下一首</button>
+</div>
+<div class="row row4">
+<button onclick="cmd('vol_down')">音量-</button>
+<button onclick="cmd('wake')">亮屏</button>
+<button onclick="cmd('wall')">进入壁画</button>
+<button onclick="cmd('vol_up')">音量+</button>
+</div>
+<div class="row">
+<button onclick="cmd('launch','netease')">网易云</button>
+<button onclick="cmd('launch','zhiyue')">知悦</button>
+<button onclick="cmd('launch','bili')">哔哩</button>
+</div>
+<div class="row row5">
+<button onclick="key('up')">上</button>
+<button onclick="key('down')">下</button>
+<button onclick="key('left')">左</button>
+<button onclick="key('right')">右</button>
+<button onclick="key('ok')">OK</button>
+</div>
+<div class="row row5">
+<button onclick="nav('back')">返回</button>
+<button onclick="nav('home')">主页</button>
+<button onclick="nav('recents')">后台</button>
+<button onclick="nav('power')">电源</button>
+<button onclick="clean()">清理</button>
+</div>
+<div id="padHeader">
+<div id="padTitle">触控板 · 光标</div>
+<button id="padMode" onclick="togglePadMode()">光标</button>
+</div>
+<div id="pad"></div>
+<script>
+function cmd(c,v,extra){
+  var url='/api/cmd?cmd='+c;
+  if(v){url+='&value='+v;}
+  if(extra){url+=extra;}
+  fetch(url,{method:'POST'}).then(refresh).catch(refresh);
+}
+function key(code){
+  fetch('/api/cmd?cmd=key&code='+code,{method:'POST'}).then(refresh).catch(refresh);
+}
+function nav(key){
+  fetch('/api/cmd?cmd=nav&key='+key,{method:'POST'}).then(refresh).catch(refresh);
+}
+function clean(){
+  fetch('/api/cmd?cmd=clean',{method:'POST'}).then(refresh).catch(refresh);
+}
+var pad=document.getElementById('pad'),padMode='cursor',down=false,moved=false;
+var lastX=0,lastY=0,cx=960,cy=540,lastSentX=960,lastSentY=540,padTimer=null;
+pad.addEventListener('pointerdown',function(e){
+  pad.setPointerCapture(e.pointerId);
+  lastX=e.clientX;lastY=e.clientY;down=true;moved=false;
+});
+pad.addEventListener('pointermove',function(e){
+  if(!down){return;}
+  var dx=e.clientX-lastX,dy=e.clientY-lastY;
+  lastX=e.clientX;lastY=e.clientY;
+  if(padMode==='cursor'){
+    if(Math.abs(dx)>0.4||Math.abs(dy)>0.4){moved=true;}
+    cx=Math.max(0,Math.min(1919,cx+dx*2.4));
+    cy=Math.max(0,Math.min(1079,cy+dy*2.4));
+    sendPadPointer();
+  }
+});
+pad.addEventListener('pointerup',function(e){
+  down=false;
+  if(padMode==='cursor'){
+    sendPadPointer(true);
+    if(!moved){cmd('click');}
+  }else{
+    var r=pad.getBoundingClientRect();
+    var bx=Math.round((e.clientX-r.left)/r.width*1919);
+    var by=Math.round((e.clientY-r.top)/r.height*1079);
+    cmd('tap',null,'&x='+bx+'&y='+by);
+  }
+});
+pad.addEventListener('pointercancel',function(){down=false;});
+function togglePadMode(){
+  padMode=padMode==='cursor'?'absolute':'cursor';
+  document.getElementById('padMode').textContent=padMode==='cursor'?'光标':'点按';
+  document.getElementById('padTitle').textContent=padMode==='cursor'?'触控板 · 光标':'触控板 · 点按';
+}
+function sendPadPointer(now){
+  if(padTimer){return;}
+  if(now){sendPadPointerNow();return;}
+  padTimer=setTimeout(function(){
+    padTimer=null;
+    sendPadPointerNow();
+  },40);
+}
+function sendPadPointerNow(){
+  var dx=cx-lastSentX,dy=cy-lastSentY;
+  if(Math.abs(dx)<0.5&&Math.abs(dy)<0.5){return;}
+  var rx=Math.round(dx),ry=Math.round(dy);
+  lastSentX+=rx;lastSentY+=ry;
+  fetch('/api/cmd?cmd=pointer&dx='+rx+'&dy='+ry);
+}
+function refresh(){
+  fetch('/api/status').then(function(r){return r.json();}).then(function(s){
+    var line='';
+    if(s.app){line+=s.app;}
+    if(s.playing){line+=' · 播放中';}else{line+=' · 已暂停';}
+    line+=' · 音量 '+s.volume+'/'+s.maxVolume+'\n';
+    if(s.title){line+=s.title;}
+    if(s.artist){line+=' - '+s.artist;}
+    document.getElementById('status').textContent=line||'未在播放';
+    document.getElementById('play').textContent=s.playing?'暂停':'播放';
+  }).catch(function(){
+    document.getElementById('status').textContent='无法连接接收端';
+  });
+}
+setInterval(refresh,3000);
+refresh();
+</script>
+</body>
+</html>
