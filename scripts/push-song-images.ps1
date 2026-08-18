@@ -11,9 +11,17 @@ if (-not (Test-Path -LiteralPath $ImageDir)) {
     throw "图片目录不存在: $ImageDir"
 }
 
-$devices = & $adb devices
-if (-not ($devices | Where-Object { $_ -match '\tdevice$' })) {
+$deviceLines = @($devices | Where-Object { $_ -match '\tdevice$' })
+if ($deviceLines.Count -eq 0) {
     throw '未检测到 adb 设备，请连接 USB 调试线并确认设备已开机。'
+}
+$rkLine = $deviceLines | Where-Object { $_ -match 'rk3399|K71V7BTYKP' } | Select-Object -First 1
+if ($rkLine) {
+    $env:ANDROID_SERIAL = ($rkLine -split "`t")[0]
+} elseif ($deviceLines.Count -eq 1) {
+    $env:ANDROID_SERIAL = ($deviceLines[0] -split "`t")[0]
+} else {
+    throw '检测到多台 adb 设备且未找到 RK3399，请只连接板子或指定 ANDROID_SERIAL。'
 }
 
 $files = @(Get-ChildItem -LiteralPath $ImageDir -Recurse -File |

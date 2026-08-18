@@ -11,16 +11,19 @@ import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.graphics.Typeface;
 import android.view.View;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
+import java.util.Locale;
 import java.util.List;
 import java.util.Set;
 
 public class SlideShowView extends View {
-    private static final long INTERVAL_MS = 15000L;
     private static final long FADE_MS = 900L;
     private static final long RESCAN_MS = 5000L;
 
@@ -35,7 +38,18 @@ public class SlideShowView extends View {
     private boolean running;
     private boolean loading;
     private boolean randomMode;
+    private boolean showClock;
+    private int clockSizeSp = PlaybackPrefs.DEFAULT_CLOCK_SIZE_SP;
+    private String clockHorizontal = PlaybackPrefs.CLOCK_CENTER;
+    private String clockVertical = PlaybackPrefs.CLOCK_BOTTOM;
     private int index;
+    private long intervalMs = PlaybackPrefs.DEFAULT_IMAGE_INTERVAL_MS;
+    private String clockText = "";
+    private String dateText = "";
+    private final SimpleDateFormat clockFormat =
+            new SimpleDateFormat("HH:mm", Locale.getDefault());
+    private final SimpleDateFormat dateFormat =
+            new SimpleDateFormat("M月d日 EEEE", Locale.CHINA);
 
     public SlideShowView(Context context) {
         super(context);
@@ -48,6 +62,15 @@ public class SlideShowView extends View {
         }
         running = true;
         index = 0;
+        showClock = PlaybackPrefs.isShowClock(getContext());
+        clockSizeSp = PlaybackPrefs.getClockSizeSp(getContext());
+        clockHorizontal = PlaybackPrefs.getClockHorizontal(getContext());
+        clockVertical = PlaybackPrefs.getClockVertical(getContext());
+        updateClockText();
+        handler.removeCallbacks(clockRunnable);
+        if (showClock) {
+            handler.postDelayed(clockRunnable, 30000L);
+        }
         rebuildPlaylist();
         if (images.isEmpty()) {
             scheduleRescan();
@@ -61,6 +84,25 @@ public class SlideShowView extends View {
         handler.removeCallbacks(advanceRunnable);
         handler.removeCallbacks(fadeRunnable);
         handler.removeCallbacks(rescanRunnable);
+        handler.removeCallbacks(clockRunnable);
+    }
+
+    private final Runnable clockRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!running || !showClock) {
+                return;
+            }
+            updateClockText();
+            handler.postDelayed(this, 30000L);
+        }
+    };
+
+    private void updateClockText() {
+        Date now = new Date();
+        clockText = clockFormat.format(now);
+        dateText = dateFormat.format(now);
+        invalidate();
     }
 
     public void release() {
@@ -89,6 +131,7 @@ public class SlideShowView extends View {
             images.addAll(all);
         }
         randomMode = PlaybackPrefs.MODE_RANDOM.equals(PlaybackPrefs.getMode(getContext()));
+        intervalMs = PlaybackPrefs.getImageIntervalMs(getContext());
         if (randomMode) {
             Collections.shuffle(images);
         }
@@ -111,7 +154,7 @@ public class SlideShowView extends View {
     private void scheduleNext() {
         handler.removeCallbacks(advanceRunnable);
         if (running && !images.isEmpty()) {
-            handler.postDelayed(advanceRunnable, INTERVAL_MS);
+            handler.postDelayed(advanceRunnable, intervalMs);
         }
     }
 
@@ -176,6 +219,55 @@ public class SlideShowView extends View {
         if (current != null) {
             drawFit(canvas, current, width, height, 255);
         }
+        if (showClock && clockText.length() > 0) {
+            drawClock(canvas);
+        }
+    }
+
+    private void drawClock(Canvas canvas) {
+        float density = getResources().getDisplayMetrics().density;
+        int margin = Math.round(48f * density);
+        float clockSize = clockSizeSp * density;
+        float dateSize = Math.max(20f, clockSize * 0.4f);
+        float gap = dateSize * 0.6f;
+
+        paint.setAntiAlias(true);
+        paint.setShadowLayer(12f * density, 0f, 4f * density,
+                Color.argb(180, 0, 0, 0));
+        paint.setColor(Color.WHITE);
+        paint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
+
+        paint.setTextSize(clockSize);
+        float timeWidth = paint.measureText(clockText);
+        paint.setTextSize(dateSize);
+        float dateWidth = paint.measureText(dateText);
+        float blockWidth = Math.max(timeWidth, dateWidth);
+        float blockHeight = clockSize + gap + dateSize;
+
+        float x;
+        if (PlaybackPrefs.CLOCK_CENTER.equals(clockHorizontal)) {
+            x = (getWidth() - blockWidth) / 2f;
+        } else if (PlaybackPrefs.CLOCK_RIGHT.equals(clockHorizontal)) {
+            x = getWidth() - margin - blockWidth;
+        } else {
+            x = margin;
+        }
+
+        float y;
+        if (PlaybackPrefs.CLOCK_MIDDLE.equals(clockVertical)) {
+            y = (getHeight() - blockHeight) / 2f;
+        } else if (PlaybackPrefs.CLOCK_BOTTOM.equals(clockVertical)) {
+            y = getHeight() - margin - blockHeight;
+        } else {
+            y = margin;
+        }
+
+        paint.setTextSize(clockSize);
+        canvas.drawText(clockText, x, y + clockSize, paint);
+        paint.setTextSize(dateSize);
+        canvas.drawText(dateText, x, y + clockSize + gap + dateSize, paint);
+        paint.clearShadowLayer();
+        paint.setTypeface(null);
     }
 
     private void drawFit(Canvas canvas, Bitmap bitmap, int width, int height, int alpha) {

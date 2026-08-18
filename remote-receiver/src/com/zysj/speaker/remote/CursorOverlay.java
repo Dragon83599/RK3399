@@ -26,10 +26,10 @@ public class CursorOverlay {
     private volatile boolean started;
     private volatile float pointerX;
     private volatile float pointerY;
+    private volatile boolean visible = true;
     private int screenWidth = 1920;
     private int screenHeight = 1080;
     private final int cursorSizePx;
-    private final int statusBarHeight;
 
     public CursorOverlay(Context context) {
         this.context = context.getApplicationContext();
@@ -39,7 +39,6 @@ public class CursorOverlay {
             screenHeight = metrics.heightPixels;
         }
         cursorSizePx = Math.round(metrics.density * CURSOR_SIZE_DP);
-        statusBarHeight = getStatusBarHeight();
         pointerX = screenWidth / 2f;
         pointerY = screenHeight / 2f;
     }
@@ -147,6 +146,22 @@ public class CursorOverlay {
         });
     }
 
+    public void setVisible(boolean visible) {
+        this.visible = visible;
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (cursorView != null) {
+                    cursorView.setVisibility(visible ? View.VISIBLE : View.GONE);
+                }
+            }
+        });
+    }
+
+    public boolean isVisible() {
+        return visible;
+    }
+
     private void postMove() {
         mainHandler.post(new Runnable() {
             @Override
@@ -163,7 +178,7 @@ public class CursorOverlay {
             return;
         }
         layoutParams.x = Math.round(pointerX - cursorSizePx / 2f);
-        layoutParams.y = Math.round(pointerY - cursorSizePx / 2f + statusBarHeight);
+        layoutParams.y = Math.round(pointerY - cursorSizePx / 2f);
         if (windowManager != null && cursorView != null) {
             try {
                 windowManager.updateViewLayout(cursorView, layoutParams);
@@ -174,18 +189,6 @@ public class CursorOverlay {
 
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
-    }
-
-    private int getStatusBarHeight() {
-        int resId = context.getResources().getIdentifier(
-                "status_bar_height", "dimen", "android");
-        if (resId > 0) {
-            try {
-                return context.getResources().getDimensionPixelSize(resId);
-            } catch (Exception ignored) {
-            }
-        }
-        return 0;
     }
 
     private class CursorView extends View {

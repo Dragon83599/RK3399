@@ -3,62 +3,166 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>壁画音响遥控</title>
 <style>
-body{background:#101418;color:#e8eaed;font-family:system-ui,sans-serif;margin:0;padding:16px}
-h1{font-size:20px;margin:0 0 4px}
-#status{color:#9aa0a6;font-size:13px;margin:0 0 16px;min-height:36px;white-space:pre-line}
-.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px}
-.row4{grid-template-columns:1fr 1fr 1fr 1fr}
-.row5{grid-template-columns:1fr 1fr 1fr 1fr 1fr}
-button{background:#20262c;color:#fff;border:1px solid #303a44;border-radius:10px;padding:18px 0;font-size:18px}
-button:active{background:#2e3a45}
-#pad{height:180px;background:#11161b;border:1px solid #303a44;border-radius:10px;margin-bottom:10px;position:relative;touch-action:none;cursor:crosshair;overflow:hidden}
-#pad::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#26313b}
-#pad::after{content:"";position:absolute;top:50%;left:0;right:0;height:1px;background:#26313b}
-#padHeader{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;margin-bottom:8px}
-#padHeader div{font-size:14px;color:#9aa0a6}
-#padMode{padding:8px 14px;font-size:14px;width:auto}
+:root{
+  --bg:#0d1117;
+  --panel:#161b22;
+  --panel2:#1c232c;
+  --border:#2a323d;
+  --text:#e6edf3;
+  --muted:#8b949e;
+  --accent:#2dd4bf;
+  --danger:#f87171;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;padding:16px 16px 32px;letter-spacing:0}
+.wrap{max-width:520px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 4px}
+h1{font-size:20px;margin:0;font-weight:700}
+#conn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+#conn i{width:8px;height:8px;border-radius:50%;background:var(--danger);box-shadow:0 0 8px var(--danger)}
+#conn.on{color:var(--accent)}
+#conn.on i{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+#status{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5;min-height:40px;white-space:pre-line}
+section{margin-bottom:14px}
+.section-title{font-size:12px;color:var(--muted);margin:0 0 8px}
+.grid{display:grid;gap:8px}
+.c3{grid-template-columns:repeat(3,1fr)}
+.c4{grid-template-columns:repeat(4,1fr)}
+.c6{grid-template-columns:repeat(6,1fr)}
+button{appearance:none;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:14px 6px;font-size:15px;font-weight:500;line-height:1.2;cursor:pointer;transition:background .12s,border-color .12s,transform .05s}
+button:active{transform:scale(.97);background:var(--panel2);border-color:#3b4754}
+button.primary{background:#0f766e;border-color:#14b8a6;color:#fff}
+button.danger{color:#fca5a5;border-color:#7f1d1d}
+.dpad{display:grid;grid-template-columns:repeat(3,72px);grid-template-rows:repeat(3,56px);gap:6px;justify-content:center}
+.dpad button{font-size:22px;padding:0}
+.dpad .up{grid-column:2}
+.dpad .left{grid-column:1;grid-row:2}
+.dpad .ok{grid-column:2;grid-row:2;background:var(--accent);border-color:#2dd4bf;color:#042f2e;font-weight:700}
+.dpad .right{grid-column:3;grid-row:2}
+.dpad .down{grid-column:2;grid-row:3}
+.pad-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.pad-header span{font-size:14px;color:var(--muted)}
+.seg{display:flex;gap:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:3px}
+.seg button{border:none;background:transparent;padding:6px 12px;font-size:13px;border-radius:6px;color:var(--muted)}
+.seg button.on{background:var(--panel2);color:var(--text)}
+#pad{height:190px;background:#0b0f14;border:1px solid var(--border);border-radius:8px;position:relative;touch-action:none;cursor:crosshair;overflow:hidden}
+#pad::before,#pad::after{content:"";position:absolute;background:#1c2733}
+#pad::before{left:50%;top:0;bottom:0;width:1px}
+#pad::after{top:50%;left:0;right:0;height:1px}
+#pad .dot{position:absolute;width:14px;height:14px;margin:-7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);pointer-events:none;display:none}
+#pad.cursor .dot{display:block}
+.slider-row{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin-top:2px}
+.slider-row input{flex:1;accent-color:var(--accent);height:26px}
+.slider-row b{min-width:44px;text-align:right;color:var(--text);font-weight:600}
+.coord{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.nudge{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.nudge button{padding:8px 0;font-size:18px}
+.scroll-row{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
+.scroll-row button{padding:10px 0;font-size:15px}
+@media (max-width:360px){
+  .c6{grid-template-columns:repeat(3,1fr)}
+  .dpad{grid-template-columns:repeat(3,64px)}
+}
 </style>
 </head>
 <body>
-<h1>壁画音响遥控</h1>
+<div class="wrap">
+<header>
+<h1>壁画音响</h1>
+<span id="conn"><i></i><span id="connText">连接中</span></span>
+</header>
 <div id="status">未连接</div>
-<div class="row">
+
+<section>
+<div class="section-title">播放控制</div>
+<div class="grid c3">
 <button onclick="cmd('prev')">上一首</button>
-<button id="play" onclick="cmd('toggle')">播放/暂停</button>
+<button id="play" class="primary" onclick="cmd('toggle')">播放</button>
 <button onclick="cmd('next')">下一首</button>
 </div>
-<div class="row row4">
-<button onclick="cmd('vol_down')">音量-</button>
+</section>
+
+<section>
+<div class="section-title">音量与显示</div>
+<div class="grid c4">
+<button onclick="cmd('vol_down')">音量 -</button>
 <button onclick="cmd('wake')">亮屏</button>
-<button onclick="cmd('wall')">进入壁画</button>
-<button onclick="cmd('vol_up')">音量+</button>
+<button onclick="cmd('wall')">壁画</button>
+<button onclick="cmd('vol_up')">音量 +</button>
 </div>
-<div class="row">
+<div class="slider-row">
+<span>上限</span>
+<input id="limit" type="range" min="10" max="100" step="5" value="80">
+<b id="limitText">80%</b>
+</div>
+</section>
+
+<section>
+<div class="section-title">应用</div>
+<div class="grid c3">
 <button onclick="cmd('launch','netease')">网易云</button>
 <button onclick="cmd('launch','zhiyue')">知悦</button>
 <button onclick="cmd('launch','bili')">哔哩</button>
 </div>
-<div class="row row5">
-<button onclick="key('up')">上</button>
-<button onclick="key('down')">下</button>
-<button onclick="key('left')">左</button>
-<button onclick="key('right')">右</button>
-<button onclick="key('ok')">OK</button>
+</section>
+
+<section>
+<div class="section-title">方向键</div>
+<div class="dpad">
+<button class="up" onclick="key('up')">↑</button>
+<button class="left" onclick="key('left')">←</button>
+<button class="ok" onclick="key('ok')">OK</button>
+<button class="right" onclick="key('right')">→</button>
+<button class="down" onclick="key('down')">↓</button>
 </div>
-<div class="row row5">
+</section>
+
+<section>
+<div class="section-title">系统键</div>
+<div class="grid c6">
 <button onclick="nav('back')">返回</button>
 <button onclick="nav('home')">主页</button>
 <button onclick="nav('recents')">后台</button>
-<button onclick="nav('power')">电源</button>
 <button onclick="clean()">清理</button>
+<button class="danger" onclick="power('off')">关机</button>
+<button onclick="power('reboot')">重启</button>
 </div>
-<div id="padHeader">
-<div id="padTitle">触控板 · 光标</div>
-<button id="padMode" onclick="togglePadMode()">光标</button>
+</section>
+
+<section>
+<div class="pad-header">
+<span id="padTitle">触控板 · 光标</span>
+<span id="coord" class="coord">960, 540</span>
+<div class="seg">
+<button id="padModeCursor" class="on" onclick="setPadMode('cursor')">光标</button>
+<button id="padModeAbsolute" onclick="setPadMode('absolute')">点按</button>
 </div>
-<div id="pad"></div>
+</div>
+<div id="pad" class="cursor"><i class="dot" id="dot"></i></div>
+<div id="nudgeRow" class="nudge">
+<button onclick="nudge(0,-5)" aria-label="光标上移 5 像素">↑</button>
+<button onclick="nudge(-5,0)" aria-label="光标左移 5 像素">←</button>
+<button class="primary" onclick="cmd('click')">点击</button>
+<button onclick="nudge(5,0)" aria-label="光标右移 5 像素">→</button>
+<button onclick="nudge(0,5)" aria-label="光标下移 5 像素">↓</button>
+</div>
+<div class="scroll-row">
+<button onclick="cmd('scroll',null,'&dir=up&count=3')">上滚</button>
+<button onclick="cmd('scroll',null,'&dir=down&count=3')">下滚</button>
+</div>
+</section>
+</div>
+
 <script>
 function cmd(c,v,extra){
   var url='/api/cmd?cmd='+c;
@@ -75,8 +179,45 @@ function nav(key){
 function clean(){
   fetch('/api/cmd?cmd=clean',{method:'POST'}).then(refresh).catch(refresh);
 }
-var pad=document.getElementById('pad'),padMode='cursor',down=false,moved=false;
+function power(action){
+  var label=action==='off'?'关机':'重启';
+  if(!confirm('确定要'+label+'设备吗？')){return;}
+  cmd(action==='off'?'poweroff':'reboot');
+}
+
+var limitInput=document.getElementById('limit');
+limitInput.addEventListener('input',function(){
+  document.getElementById('limitText').textContent=this.value+'%';
+});
+limitInput.addEventListener('change',function(){
+  cmd('vol_limit',this.value);
+});
+
+var pad=document.getElementById('pad'),dot=document.getElementById('dot');
+var padMode='cursor',down=false,moved=false;
 var lastX=0,lastY=0,cx=960,cy=540,lastSentX=960,lastSentY=540,padTimer=null;
+
+function setPadMode(mode){
+  padMode=mode;
+  pad.className=mode==='cursor'?'cursor':'';
+  document.getElementById('padModeCursor').className=mode==='cursor'?'on':'';
+  document.getElementById('padModeAbsolute').className=mode==='cursor'?'':'on';
+  document.getElementById('padTitle').textContent=mode==='cursor'?'触控板 · 光标':'触控板 · 点按';
+  document.getElementById('nudgeRow').style.display=mode==='cursor'?'':'none';
+  updateDot();
+}
+function updateDot(){
+  var r=pad.getBoundingClientRect();
+  dot.style.left=Math.round(cx/1919*r.width)+'px';
+  dot.style.top=Math.round(cy/1079*r.height)+'px';
+  document.getElementById('coord').textContent=Math.round(cx)+', '+Math.round(cy);
+}
+function nudge(dx,dy){
+  cx=Math.max(0,Math.min(1919,cx+dx));
+  cy=Math.max(0,Math.min(1079,cy+dy));
+  updateDot();
+  sendPadPointerNow();
+}
 pad.addEventListener('pointerdown',function(e){
   pad.setPointerCapture(e.pointerId);
   lastX=e.clientX;lastY=e.clientY;down=true;moved=false;
@@ -89,6 +230,7 @@ pad.addEventListener('pointermove',function(e){
     if(Math.abs(dx)>0.4||Math.abs(dy)>0.4){moved=true;}
     cx=Math.max(0,Math.min(1919,cx+dx*2.4));
     cy=Math.max(0,Math.min(1079,cy+dy*2.4));
+    updateDot();
     sendPadPointer();
   }
 });
@@ -105,11 +247,6 @@ pad.addEventListener('pointerup',function(e){
   }
 });
 pad.addEventListener('pointercancel',function(){down=false;});
-function togglePadMode(){
-  padMode=padMode==='cursor'?'absolute':'cursor';
-  document.getElementById('padMode').textContent=padMode==='cursor'?'光标':'点按';
-  document.getElementById('padTitle').textContent=padMode==='cursor'?'触控板 · 光标':'触控板 · 点按';
-}
 function sendPadPointer(now){
   if(padTimer){return;}
   if(now){sendPadPointerNow();return;}
@@ -125,17 +262,30 @@ function sendPadPointerNow(){
   lastSentX+=rx;lastSentY+=ry;
   fetch('/api/cmd?cmd=pointer&dx='+rx+'&dy='+ry);
 }
+
 function refresh(){
   fetch('/api/status').then(function(r){return r.json();}).then(function(s){
+    var conn=document.getElementById('conn'),connText=document.getElementById('connText');
+    conn.classList.add('on');
+    connText.textContent='已连接';
     var line='';
     if(s.app){line+=s.app;}
     if(s.playing){line+=' · 播放中';}else{line+=' · 已暂停';}
-    line+=' · 音量 '+s.volume+'/'+s.maxVolume+'\n';
-    if(s.title){line+=s.title;}
+    line+=' · 音量 '+s.volume+'/'+s.maxVolume;
+    if(s.title){line+='\n'+s.title;}
     if(s.artist){line+=' - '+s.artist;}
+    line+='\n'+(s.inputHelper?'输入通道正常':'输入通道离线');
     document.getElementById('status').textContent=line||'未在播放';
     document.getElementById('play').textContent=s.playing?'暂停':'播放';
+    if(s.volumeLimit){
+      document.getElementById('limit').value=s.volumeLimit;
+      document.getElementById('limitText').textContent=s.volumeLimit+'%';
+    }
+    updateDot();
   }).catch(function(){
+    var conn=document.getElementById('conn');
+    conn.classList.remove('on');
+    document.getElementById('connText').textContent='未连接';
     document.getElementById('status').textContent='无法连接接收端';
   });
 }

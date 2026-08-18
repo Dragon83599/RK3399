@@ -12,7 +12,7 @@ public final class Http {
     public static String get(String urlString) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(urlString).openConnection();
         connection.setConnectTimeout(3000);
-        connection.setReadTimeout(3000);
+        connection.setReadTimeout(10000);
         connection.setRequestMethod("GET");
         connection.setUseCaches(false);
         int code = connection.getResponseCode();

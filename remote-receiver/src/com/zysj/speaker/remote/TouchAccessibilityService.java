@@ -273,7 +273,7 @@ public class TouchAccessibilityService extends AccessibilityService {
             if (root == null) {
                 continue;
             }
-            AccessibilityNodeInfo button = findTextNode(root, text);
+            AccessibilityNodeInfo button = findVisibleTextNode(root, text);
             if (button != null) {
                 Rect rect = new Rect();
                 button.getBoundsInScreen(rect);
@@ -285,6 +285,29 @@ public class TouchAccessibilityService extends AccessibilityService {
                 return center;
             }
             root.recycle();
+        }
+        return null;
+    }
+
+    private static AccessibilityNodeInfo findVisibleTextNode(AccessibilityNodeInfo node,
+                                                             String text) {
+        if (node == null) {
+            return null;
+        }
+        String nodeText = textOf(node.getText()) + " "
+                + textOf(node.getContentDescription());
+        if (node.isVisibleToUser() && nodeText.contains(text)) {
+            return node;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                AccessibilityNodeInfo found = findVisibleTextNode(child, text);
+                if (found != null) {
+                    return found;
+                }
+                child.recycle();
+            }
         }
         return null;
     }
@@ -326,6 +349,65 @@ public class TouchAccessibilityService extends AccessibilityService {
             CharSequence title = window.getTitle();
             String titleStr = title == null ? "" : title.toString();
             if (titleStr.contains("导航栏") || titleStr.contains("NavigationBar")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isDreamActive() {
+        TouchAccessibilityService service = instance;
+        if (service == null) {
+            return false;
+        }
+        List<AccessibilityWindowInfo> windows = service.getWindows();
+        if (windows == null) {
+            return false;
+        }
+        for (AccessibilityWindowInfo window : windows) {
+            CharSequence title = window.getTitle();
+            String titleStr = title == null ? "" : title.toString().toLowerCase();
+            if (titleStr.contains("设置")) {
+                return false;
+            }
+        }
+        for (AccessibilityWindowInfo window : windows) {
+            CharSequence title = window.getTitle();
+            String titleStr = title == null ? "" : title.toString().toLowerCase();
+            if (titleStr.contains("设置")) {
+                continue;
+            }
+            if (titleStr.contains("dream") || titleStr.contains("standby")
+                    || titleStr.contains("宋画") || titleStr.contains("屏保")) {
+                return true;
+            }
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root != null) {
+                CharSequence pkg = root.getPackageName();
+                if (pkg != null && pkg.toString().contains("standby")) {
+                    root.recycle();
+                    return true;
+                }
+                root.recycle();
+            }
+        }
+        return false;
+    }
+
+    public static boolean isRecentsActive() {
+        TouchAccessibilityService service = instance;
+        if (service == null) {
+            return false;
+        }
+        List<AccessibilityWindowInfo> windows = service.getWindows();
+        if (windows == null) {
+            return false;
+        }
+        for (AccessibilityWindowInfo window : windows) {
+            CharSequence title = window.getTitle();
+            String titleStr = title == null ? "" : title.toString().toLowerCase();
+            if (titleStr.contains("quickstep") || titleStr.contains("recents")
+                    || titleStr.contains("最近任务") || titleStr.contains("概览")) {
                 return true;
             }
         }

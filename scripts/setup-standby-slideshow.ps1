@@ -15,8 +15,17 @@ if (-not (Test-Path $Apk)) {
 }
 
 $devices = & $adb devices
-if (-not ($devices | Where-Object { $_ -match '\tdevice$' })) {
+$deviceLines = @($devices | Where-Object { $_ -match '\tdevice$' })
+if ($deviceLines.Count -eq 0) {
     throw '未检测到 adb 设备，请连接 USB 调试线并确认设备已开机。'
+}
+$rkLine = $deviceLines | Where-Object { $_ -match 'rk3399|K71V7BTYKP' } | Select-Object -First 1
+if ($rkLine) {
+    $env:ANDROID_SERIAL = ($rkLine -split "`t")[0]
+} elseif ($deviceLines.Count -eq 1) {
+    $env:ANDROID_SERIAL = ($deviceLines[0] -split "`t")[0]
+} else {
+    throw '检测到多台 adb 设备且未找到 RK3399，请只连接板子或指定 ANDROID_SERIAL。'
 }
 
 & $adb root | Out-Null
@@ -36,6 +45,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & $adb shell "pm grant com.zysj.standby android.permission.READ_EXTERNAL_STORAGE"
+& $adb shell "appops set com.zysj.standby WRITE_SETTINGS allow"
 
 Write-Host '==> 启用待机屏保'
 $settings = @(
@@ -49,6 +59,7 @@ $settings = @(
 foreach ($setting in $settings) {
     & $adb shell "settings put secure $setting"
 }
+& $adb shell "settings put global policy_control immersive.full=com.zysj.standby"
 
 # Let the screen time out into the dream instead of turning off.
 & $adb shell "settings put global stay_on_while_plugged_in 0"
@@ -62,7 +73,7 @@ if ($hasDreamsCmd -match 'dreams-cmd') {
     Write-Host '==> 启动预览界面'
     & $adb shell "am start -n com.zysj.standby/.MainActivity"
 } else {
-    Write-Host '已启用待机屏保。设备空闲 60 秒后会自动进入轮播；可手动打开“宋画屏保”预览。'
+    Write-Host '已启用待机屏保。可在“宋画屏保设置”中调整等待时间和每幅画时长。'
 }
 
 Write-Host '完成。'

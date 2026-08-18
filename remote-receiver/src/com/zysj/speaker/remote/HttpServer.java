@@ -2,6 +2,7 @@ package com.zysj.speaker.remote;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.PowerManager;
 
 import org.json.JSONObject;
 
@@ -32,6 +33,7 @@ public class HttpServer {
     private ServerSocket serverSocket;
     private Thread acceptThread;
     private ExecutorService workers;
+    private final Object screenLock = new Object();
     private volatile boolean running;
     private byte[] pageCache;
 
@@ -134,6 +136,13 @@ public class HttpServer {
 
             if (path.equals("/") || path.equals("/index.html")) {
                 respond(socket, "text/html; charset=utf-8", page());
+            } else if (path.equals("/manifest.webmanifest")) {
+                respond(socket, "application/manifest+json; charset=utf-8",
+                        rawResource(R.raw.remote_manifest));
+            } else if (path.equals("/icon-192.png")) {
+                respond(socket, "image/png", rawResource(R.raw.remote_icon_192));
+            } else if (path.equals("/icon-512.png")) {
+                respond(socket, "image/png", rawResource(R.raw.remote_icon_512));
             } else if (path.equals("/api/status")) {
                 JSONObject status = mediaControl.status(context);
                 status.put("inputHelper", rootHelperAlive());
@@ -203,6 +212,16 @@ public class HttpServer {
                 result.put("error", "missing cmd");
                 return result.toString();
             }
+            if (cmd.equals("toggle") || cmd.equals("play") || cmd.equals("pause")
+                    || cmd.equals("next") || cmd.equals("prev")
+                    || cmd.equals("vol_up") || cmd.equals("vol_down")
+                    || cmd.equals("launch") || cmd.equals("tap") || cmd.equals("swipe")
+                    || cmd.equals("click") || cmd.equals("scroll")
+                    || cmd.equals("back") || cmd.equals("home") || cmd.equals("select")
+                    || cmd.equals("key") || cmd.equals("nav") || cmd.equals("clean")
+                    || cmd.equals("wake") || cmd.equals("wall")) {
+                ensureScreenOn();
+            }
             if (cmd.equals("toggle")) {
                 mediaControl.toggle();
             } else if (cmd.equals("play")) {
@@ -222,6 +241,11 @@ public class HttpServer {
                     mediaControl.setVolumePercent(Integer.parseInt(value));
                 } catch (Exception ignored) {
                 }
+            } else if (cmd.equals("vol_limit")) {
+                try {
+                    mediaControl.setVolumeLimitPercent(Integer.parseInt(value));
+                } catch (Exception ignored) {
+                }
             } else if (cmd.equals("launch")) {
                 launchApp(value);
             } else if (cmd.equals("tap")) {
@@ -230,9 +254,10 @@ public class HttpServer {
                 if (x < 0 || y < 0) {
                     throw new Exception("missing x/y");
                 }
+                y = Math.max(y, statusBarHeight());
                 cursorOverlay.setPointer(x, y);
-                if (!TouchAccessibilityService.tap(x, y)) {
-                    throw new Exception("accessibility service not enabled");
+                if (!rootTap(x, y) && !TouchAccessibilityService.tap(x, y)) {
+                    throw new Exception("root input helper not running and accessibility service not enabled");
                 }
                 cursorOverlay.flash();
             } else if (cmd.equals("swipe")) {
@@ -244,8 +269,12 @@ public class HttpServer {
                 if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) {
                     throw new Exception("missing swipe coordinates");
                 }
-                if (!TouchAccessibilityService.swipe(x1, y1, x2, y2, duration)) {
-                    throw new Exception("accessibility service not enabled");
+                y1 = Math.max(y1, swipeSafeY());
+                y2 = Math.max(y2, swipeSafeY());
+                if (rootHelperAlive()) {
+                    sendRootInput("swipe " + x1 + " " + y1 + " " + x2 + " " + y2 + " " + duration);
+                } else if (!TouchAccessibilityService.swipe(x1, y1, x2, y2, duration)) {
+                    throw new Exception("root input helper not running and accessibility service not enabled");
                 }
                 cursorOverlay.setPointer(x2, y2);
                 cursorOverlay.flash();
@@ -261,11 +290,15 @@ public class HttpServer {
                 if (x >= 0 && y >= 0) {
                     cursorOverlay.setPointer(x, y);
                 }
-                if (!cursorOverlay.clickAtCurrent()) {
+                int px = Math.round(cursorOverlay.getPointerX());
+                int py = Math.round(cursorOverlay.getPointerY());
+                py = Math.max(py, statusBarHeight());
+                cursorOverlay.setPointer(px, py);
+                if (!rootTap(px, py) && !cursorOverlay.clickAtCurrent()) {
                     if (!cursorOverlay.isAvailable()) {
                         throw new Exception("cursor overlay not enabled");
                     }
-                    throw new Exception("accessibility service not enabled");
+                    throw new Exception("root input helper not running and accessibility service not enabled");
                 }
             } else if (cmd.equals("scroll")) {
                 String dir = params.get("dir");
@@ -329,9 +362,9 @@ public class HttpServer {
                 if (key.equals("power")) {
                     sendRootInput("keyevent --longpress 26");
                 } else if (key.equals("home")) {
-                    sendRootInput("tap 959 1044");
+                    sendRootInput("keyevent 3");
                 } else if (key.equals("back")) {
-                    sendRootInput("tap 764 1044");
+                    sendRootInput("keyevent 4");
                 } else if (key.equals("recents")) {
                     openRecents();
                 }
@@ -349,8 +382,21 @@ public class HttpServer {
                     throw new Exception("root input helper not running");
                 }
                 sendRootInput("keyevent 26");
+            } else if (cmd.equals("poweroff")) {
+                if (!rootHelperAlive()) {
+                    throw new Exception("root input helper not running");
+                }
+                dismissDreamIfNeeded();
+                sendRootInput("shell:reboot -p");
+            } else if (cmd.equals("reboot")) {
+                if (!rootHelperAlive()) {
+                    throw new Exception("root input helper not running");
+                }
+                dismissDreamIfNeeded();
+                sendRootInput("shell:reboot");
             } else if (cmd.equals("wall")) {
                 launchWall();
+                cursorOverlay.setVisible(false);
             } else {
                 result.put("ok", false);
                 result.put("error", "unknown cmd: " + cmd);
@@ -405,21 +451,46 @@ public class HttpServer {
         context.startActivity(intent);
     }
 
+    private void ensureScreenOn() throws Exception {
+        synchronized (screenLock) {
+            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isInteractive()) {
+                wakeScreen();
+                long deadline = System.currentTimeMillis() + 2000;
+                while (System.currentTimeMillis() < deadline) {
+                    if (pm.isInteractive()) {
+                        break;
+                    }
+                    Thread.sleep(100);
+                }
+            }
+            dismissDreamIfNeeded();
+            cursorOverlay.setVisible(true);
+        }
+    }
+
     private boolean cleanBackground() throws Exception {
         if (!rootHelperAlive()) {
             throw new Exception("root input helper not running");
         }
         openRecents();
         boolean done = false;
-        for (int i = 0; i < 8; i++) {
-            int[] center = TouchAccessibilityService.findTextCenter("全部清除");
-            if (center != null) {
-                sendRootInput("tap " + center[0] + " " + center[1]);
-                done = true;
-                break;
+        for (int round = 0; round < 2 && !done; round++) {
+            boolean swipeRight = round == 0;
+            for (int i = 0; i < 12 && !done; i++) {
+                int[] center = TouchAccessibilityService.findTextCenter("全部清除");
+                if (center != null) {
+                    sendRootInput("tap " + center[0] + " " + center[1]);
+                    done = true;
+                    break;
+                }
+                if (swipeRight) {
+                    sendRootInput("swipe 200 540 1700 540 300");
+                } else {
+                    sendRootInput("swipe 1700 540 200 540 300");
+                }
+                Thread.sleep(300);
             }
-            sendRootInput("swipe 200 500 1700 500 400");
-            Thread.sleep(500);
         }
         Thread.sleep(done ? 600 : 0);
         sendRootInput("keyevent 3");
@@ -430,27 +501,46 @@ public class HttpServer {
         if (!rootHelperAlive()) {
             throw new Exception("root input helper not running");
         }
-        if (TouchAccessibilityService.hasText("全部清除")) {
+        sendRootInput("shell:am start -n com.android.launcher3/com.android.quickstep.RecentsActivity");
+        long deadline = System.currentTimeMillis() + 2500;
+        while (System.currentTimeMillis() < deadline) {
+            if (TouchAccessibilityService.isRecentsActive()) {
+                Thread.sleep(200);
+                return;
+            }
+            Thread.sleep(250);
+        }
+    }
+
+    private void dismissDreamIfNeeded() throws Exception {
+        if (!TouchAccessibilityService.isDreamActive()) {
             return;
         }
-        if (!TouchAccessibilityService.navBarAccessible()) {
-            sendRootInput("swipe 960 1070 960 900 250");
+        boolean dismissed = false;
+        if (rootHelperAlive()) {
+            sendRootInput("tap 20 200");
+            dismissed = true;
+        } else if (TouchAccessibilityService.tap(20, 200)) {
+            dismissed = true;
+        }
+        if (dismissed) {
             Thread.sleep(700);
-            if (!TouchAccessibilityService.navBarAccessible()) {
-                sendRootInput("swipe 960 10 960 150 250");
+        }
+        if (TouchAccessibilityService.isDreamActive()) {
+            boolean left = false;
+            if (rootHelperAlive()) {
+                sendRootInput("keyevent 3");
+                left = true;
+            } else if (TouchAccessibilityService.home()) {
+                left = true;
+            }
+            if (left) {
                 Thread.sleep(700);
             }
         }
-        if (!TouchAccessibilityService.navBarAccessible()) {
-            throw new Exception("navigation bar hidden");
-        }
-        sendRootInput("tap 1154 1044");
-        Thread.sleep(1000);
-        for (int i = 0; i < 4; i++) {
-            if (TouchAccessibilityService.hasText("全部清除")) {
-                return;
-            }
-            Thread.sleep(400);
+        if (TouchAccessibilityService.isDreamActive() && rootHelperAlive()) {
+            sendRootInput("shell:am force-stop com.zysj.standby");
+            Thread.sleep(500);
         }
     }
 
@@ -481,6 +571,32 @@ public class HttpServer {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private int statusBarHeight() {
+        int height = 60;
+        int resId = context.getResources().getIdentifier(
+                "status_bar_height", "dimen", "android");
+        if (resId > 0) {
+            try {
+                height = context.getResources().getDimensionPixelSize(resId);
+            } catch (Exception ignored) {
+            }
+        }
+        return Math.max(height, 120);
+    }
+
+    private int swipeSafeY() {
+        return Math.max(statusBarHeight(), 300);
+    }
+
+    private boolean rootTap(int x, int y) throws Exception {
+        if (!rootHelperAlive()) {
+            return false;
+        }
+        sendRootInput("tap " + x + " " + y);
+        cursorOverlay.flash();
+        return true;
     }
 
     private synchronized void sendRootInput(String args) throws Exception {
@@ -537,16 +653,28 @@ public class HttpServer {
     }
 
     private boolean gestureScroll(String dir) {
+        int x1;
+        int y1;
+        int x2;
+        int y2;
         if (dir.equals("down")) {
-            return TouchAccessibilityService.swipe(960, 800, 960, 400, 200);
+            x1 = 960; y1 = 800; x2 = 960; y2 = 400;
+        } else if (dir.equals("up")) {
+            x1 = 960; y1 = 400; x2 = 960; y2 = 800;
+        } else if (dir.equals("left")) {
+            x1 = 400; y1 = 540; x2 = 800; y2 = 540;
+        } else {
+            x1 = 800; y1 = 540; x2 = 400; y2 = 540;
         }
-        if (dir.equals("up")) {
-            return TouchAccessibilityService.swipe(960, 400, 960, 800, 200);
+        if (rootHelperAlive()) {
+            try {
+                sendRootInput("swipe " + x1 + " " + y1 + " " + x2 + " " + y2 + " 200");
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
         }
-        if (dir.equals("left")) {
-            return TouchAccessibilityService.swipe(400, 540, 800, 540, 200);
-        }
-        return TouchAccessibilityService.swipe(800, 540, 400, 540, 200);
+        return TouchAccessibilityService.swipe(x1, y1, x2, y2, 200);
     }
 
     private byte[] page() {
@@ -566,6 +694,22 @@ public class HttpServer {
             }
         }
         return pageCache;
+    }
+
+    private byte[] rawResource(int resId) {
+        try {
+            InputStream in = context.getResources().openRawResource(resId);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                out.write(buffer, 0, n);
+            }
+            in.close();
+            return out.toByteArray();
+        } catch (Exception e) {
+            return new byte[0];
+        }
     }
 
     private void respond(Socket socket, String contentType, byte[] body) throws IOException {

@@ -20,6 +20,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MediaControl {
+    private static final String PREFS = "remote_prefs";
+    private static final String KEY_VOLUME_LIMIT_PERCENT = "volume_limit_percent";
+    private static final int DEFAULT_VOLUME_LIMIT_PERCENT = 80;
     private static final String[] PREFERRED = {
             "com.netease.cloudmusic",
             "zhiyue.go.fmzonghe.hecheng",
@@ -288,7 +291,13 @@ public class MediaControl {
 
     public void volumeUp() {
         if (audioManager != null) {
+            if (getVolume() >= limitVolume()) {
+                return;
+            }
             audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0);
+            if (getVolume() > limitVolume()) {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, limitVolume(), 0);
+            }
         }
     }
 
@@ -304,7 +313,34 @@ public class MediaControl {
         }
         int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
         int target = Math.max(0, Math.min(100, percent)) * max / 100;
+        if (target > limitVolume()) {
+            target = limitVolume();
+        }
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);
+    }
+
+    public int getVolumeLimitPercent() {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_VOLUME_LIMIT_PERCENT, DEFAULT_VOLUME_LIMIT_PERCENT);
+    }
+
+    public void setVolumeLimitPercent(int percent) {
+        int value = Math.max(1, Math.min(100, percent));
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_VOLUME_LIMIT_PERCENT, value)
+                .apply();
+        if (audioManager != null && getVolume() > limitVolume()) {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, limitVolume(), 0);
+        }
+    }
+
+    private int limitVolume() {
+        if (audioManager == null) {
+            return getMaxVolume();
+        }
+        int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        return Math.round(max * getVolumeLimitPercent() / 100f);
     }
 
     public JSONObject status(Context ctx) {
@@ -318,6 +354,7 @@ public class MediaControl {
             json.put("playing", isPlaying());
             json.put("volume", getVolume());
             json.put("maxVolume", getMaxVolume());
+            json.put("volumeLimit", getVolumeLimitPercent());
 
             String title = fallbackTitle;
             String artist = fallbackArtist;

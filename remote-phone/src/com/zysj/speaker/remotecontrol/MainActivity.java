@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.InputType;
@@ -17,6 +20,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -25,6 +29,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+    private static final int BG = 0xFF0D1117;
+    private static final int PANEL = 0xFF161B22;
+    private static final int PANEL2 = 0xFF1C232C;
+    private static final int BORDER = 0xFF2A323D;
+    private static final int TEXT = 0xFFE6EDF3;
+    private static final int MUTED = 0xFF8B949E;
+    private static final int ACCENT = 0xFF2DD4BF;
+
     private static final String PREFS = "remote_prefs";
     private static final String KEY_HOST = "host";
     private static final int PORT = 8080;
@@ -34,9 +46,11 @@ public class MainActivity extends Activity {
     private Button playButton;
     private Button padModeButton;
     private TouchPadView touchPad;
+    private SeekBar volumeLimitBar;
+    private TextView volumeLimitText;
     private SharedPreferences prefs;
     private final Handler handler = new Handler();
-    private final ExecutorService commandExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService commandExecutor = Executors.newCachedThreadPool();
     private volatile String host;
     private volatile boolean connected;
     private Discovery discovery;
@@ -125,27 +139,41 @@ public class MainActivity extends Activity {
 
     private View buildUi() {
         ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(20);
-        root.setPadding(pad, pad, pad, pad);
+        int pad = dp(18);
+        root.setPadding(pad, dp(12), pad, dp(28));
+        root.setBackgroundColor(BG);
         scroll.addView(root);
 
         TextView title = new TextView(this);
         title.setText("音响遥控");
-        title.setTextSize(26);
+        title.setTextSize(24);
+        title.setTextColor(TEXT);
+        title.setTypeface(title.getTypeface(), Typeface.BOLD);
         root.addView(title);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("壁画音响控制面板");
+        subtitle.setTextSize(13);
+        subtitle.setTextColor(MUTED);
+        root.addView(subtitle);
 
         LinearLayout hostRow = new LinearLayout(this);
         hostRow.setOrientation(LinearLayout.HORIZONTAL);
-        hostRow.setPadding(0, dp(16), 0, 0);
+        hostRow.setPadding(0, dp(14), 0, 0);
 
         hostInput = new EditText(this);
         hostInput.setHint("接收端 IP，如 192.168.1.66");
+        hostInput.setHintTextColor(0xFF6B7280);
+        hostInput.setTextColor(TEXT);
         hostInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         hostInput.setSingleLine(true);
         hostInput.setSelectAllOnFocus(true);
         hostInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        hostInput.setPadding(dp(10), 0, dp(10), 0);
+        hostInput.setBackground(rounded(PANEL, BORDER));
         hostInput.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
@@ -160,12 +188,12 @@ public class MainActivity extends Activity {
             }
         });
         hostRow.addView(hostInput,
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                new LinearLayout.LayoutParams(0, dp(42), 1f));
 
-        Button connectButton = new Button(this);
-        connectButton.setText("连接");
-        hostRow.addView(connectButton,
-                new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button connectButton = styledButton("连接", 42);
+        LinearLayout.LayoutParams connParams = new LinearLayout.LayoutParams(dp(88), dp(42));
+        connParams.leftMargin = dp(8);
+        hostRow.addView(connectButton, connParams);
         connectButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -179,35 +207,90 @@ public class MainActivity extends Activity {
 
         statusView = new TextView(this);
         statusView.setText("未连接\n自动发现设备中…");
-        statusView.setTextSize(15);
-        statusView.setPadding(0, dp(12), 0, dp(12));
+        statusView.setTextSize(14);
+        statusView.setTextColor(MUTED);
+        statusView.setLineSpacing(0f, 1.2f);
+        statusView.setPadding(0, dp(12), 0, dp(6));
         root.addView(statusView);
 
+        root.addView(sectionLabel("播放控制"));
         root.addView(buttonRow(new String[]{"上一首", "播放/暂停", "下一首"},
                 new String[]{"prev", "toggle", "next"}));
-        root.addView(buttonRow(new String[]{"音量-", "亮屏", "进入壁画", "音量+"},
+
+        root.addView(sectionLabel("音量与显示"));
+        root.addView(buttonRow(new String[]{"音量-", "亮屏", "壁画", "音量+"},
                 new String[]{"vol_down", "wake", "wall", "vol_up"}));
+
+        LinearLayout limitRow = new LinearLayout(this);
+        limitRow.setOrientation(LinearLayout.HORIZONTAL);
+        limitRow.setPadding(0, dp(10), 0, 0);
+        TextView limitLabel = new TextView(this);
+        limitLabel.setText("音量上限");
+        limitLabel.setTextSize(13);
+        limitLabel.setTextColor(MUTED);
+        limitLabel.setGravity(Gravity.CENTER_VERTICAL);
+        volumeLimitText = new TextView(this);
+        volumeLimitText.setText("80%");
+        volumeLimitText.setTextSize(13);
+        volumeLimitText.setTextColor(TEXT);
+        volumeLimitText.setGravity(Gravity.CENTER_VERTICAL);
+        volumeLimitText.setPadding(dp(8), 0, 0, 0);
+        volumeLimitBar = new SeekBar(this);
+        volumeLimitBar.setMax(90);
+        volumeLimitBar.setProgress(70);
+        volumeLimitBar.setProgressTintList(ColorStateList.valueOf(ACCENT));
+        volumeLimitBar.setThumbTintList(ColorStateList.valueOf(ACCENT));
+        volumeLimitBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (volumeLimitText != null) {
+                    volumeLimitText.setText((progress + 10) + "%");
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                sendCommandQuery("cmd=vol_limit&value=" + (seekBar.getProgress() + 10));
+            }
+        });
+        limitRow.addView(limitLabel,
+                new LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT));
+        limitRow.addView(volumeLimitBar,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        limitRow.addView(volumeLimitText,
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(limitRow);
+
+        root.addView(sectionLabel("应用"));
         root.addView(buttonRow(new String[]{"网易云", "知悦", "哔哩"},
                 new String[]{"netease", "zhiyue", "bili"}));
-        root.addView(navRow(new String[]{"返回", "主页", "后台", "电源", "清理"},
-                new String[]{"back", "home", "recents", "power", "clean"}));
+
+        root.addView(sectionLabel("系统键"));
+        root.addView(navRow(new String[]{"返回", "主页", "后台", "清理", "关机", "重启"},
+                new String[]{"back", "home", "recents", "clean", "poweroff", "reboot"}));
+
+        root.addView(sectionLabel("方向键"));
         root.addView(keyRow(new String[]{"上", "下", "左", "右", "OK"},
                 new String[]{"up", "down", "left", "right", "ok"}));
 
         LinearLayout padHeader = new LinearLayout(this);
         padHeader.setOrientation(LinearLayout.HORIZONTAL);
-        padHeader.setPadding(0, dp(10), 0, 0);
+        padHeader.setPadding(0, dp(14), 0, dp(6));
 
         TextView padLabel = new TextView(this);
         padLabel.setText("触控板");
         padLabel.setTextSize(14);
+        padLabel.setTextColor(MUTED);
         padLabel.setGravity(Gravity.CENTER_VERTICAL);
         padHeader.addView(padLabel,
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        padModeButton = new Button(this);
-        padModeButton.setText("光标");
-        padModeButton.setTextSize(14);
+        padModeButton = styledButton("光标", 40);
         padModeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -215,13 +298,11 @@ public class MainActivity extends Activity {
             }
         });
         padHeader.addView(padModeButton,
-                new LinearLayout.LayoutParams(dp(88), dp(44)));
+                new LinearLayout.LayoutParams(dp(88), dp(40)));
 
-        Button fullscreenButton = new Button(this);
-        fullscreenButton.setText("全屏");
-        fullscreenButton.setTextSize(14);
+        Button fullscreenButton = styledButton("全屏", 40);
         LinearLayout.LayoutParams fullscreenParams =
-                new LinearLayout.LayoutParams(dp(72), dp(44));
+                new LinearLayout.LayoutParams(dp(72), dp(40));
         fullscreenParams.leftMargin = dp(8);
         fullscreenButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -244,8 +325,9 @@ public class MainActivity extends Activity {
             }
         });
         LinearLayout.LayoutParams padParams =
-                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(170));
-        padParams.topMargin = dp(6);
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(180));
+        padParams.topMargin = dp(2);
+        touchPad.setBackground(rounded(0xFF0B0F14, BORDER));
         root.addView(touchPad, padParams);
 
         LinearLayout scrollRow = new LinearLayout(this);
@@ -253,11 +335,9 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams scrollRowParams =
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT);
-        scrollRowParams.topMargin = dp(6);
+        scrollRowParams.topMargin = dp(8);
 
-        Button scrollUpButton = new Button(this);
-        scrollUpButton.setText("上滚");
-        scrollUpButton.setTextSize(15);
+        Button scrollUpButton = styledButton("上滚", 44);
         scrollUpButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -267,9 +347,7 @@ public class MainActivity extends Activity {
         scrollRow.addView(scrollUpButton,
                 new LinearLayout.LayoutParams(0, dp(44), 1f));
 
-        Button scrollDownButton = new Button(this);
-        scrollDownButton.setText("下滚");
-        scrollDownButton.setTextSize(15);
+        Button scrollDownButton = styledButton("下滚", 44);
         LinearLayout.LayoutParams downParams =
                 new LinearLayout.LayoutParams(0, dp(44), 1f);
         downParams.leftMargin = dp(8);
@@ -295,9 +373,10 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         for (int i = 0; i < labels.length; i++) {
-            Button button = new Button(this);
-            button.setText(labels[i]);
-            button.setTextSize(16);
+            Button button = styledButton(labels[i], 48);
+            if (labels.length >= 6) {
+                button.setTextSize(13);
+            }
             LinearLayout.LayoutParams params =
                     new LinearLayout.LayoutParams(0, dp(48), 1f);
             if (i > 0) {
@@ -306,6 +385,7 @@ public class MainActivity extends Activity {
             row.addView(button, params);
             if (labels[i].equals("播放/暂停")) {
                 playButton = button;
+                button.setBackground(rounded(0xFF0F766E, 0xFF14B8A6));
             }
             final String command = commands[i];
             if (command.equals("toggle")) {
@@ -339,11 +419,10 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(6), 0, 0);
         for (int i = 0; i < labels.length; i++) {
-            Button button = new Button(this);
-            button.setText(labels[i]);
-            button.setTextSize(15);
+            Button button = styledButton(labels[i], 48);
+            button.setTextSize(16);
             LinearLayout.LayoutParams params =
-                    new LinearLayout.LayoutParams(0, dp(44), 1f);
+                    new LinearLayout.LayoutParams(0, dp(48), 1f);
             if (i > 0) {
                 params.leftMargin = dp(6);
             }
@@ -364,11 +443,10 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(6), 0, 0);
         for (int i = 0; i < labels.length; i++) {
-            Button button = new Button(this);
-            button.setText(labels[i]);
-            button.setTextSize(15);
+            Button button = styledButton(labels[i], 46);
+            button.setTextSize(13);
             LinearLayout.LayoutParams params =
-                    new LinearLayout.LayoutParams(0, dp(44), 1f);
+                    new LinearLayout.LayoutParams(0, dp(46), 1f);
             if (i > 0) {
                 params.leftMargin = dp(6);
             }
@@ -379,6 +457,8 @@ public class MainActivity extends Activity {
                 public void onClick(View v) {
                     if (key.equals("clean")) {
                         sendCommandQuery("cmd=clean");
+                    } else if (key.equals("poweroff") || key.equals("reboot")) {
+                        sendCommandQuery("cmd=" + key);
                     } else {
                         sendCommandQuery("cmd=nav&key=" + key);
                     }
@@ -417,6 +497,8 @@ public class MainActivity extends Activity {
                     final boolean isPlaying = json.optBoolean("playing", false);
                     final int volume = json.optInt("volume", -1);
                     final int maxVolume = json.optInt("maxVolume", -1);
+                    final int volumeLimit = Math.max(10,
+                            Math.min(100, json.optInt("volumeLimit", 80)));
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -440,6 +522,12 @@ public class MainActivity extends Activity {
                             }
                             statusView.setText(text.toString());
                             playButton.setText(isPlaying ? "暂停" : "播放");
+                            if (volumeLimitBar != null) {
+                                volumeLimitBar.setProgress(volumeLimit - 10);
+                            }
+                            if (volumeLimitText != null) {
+                                volumeLimitText.setText(volumeLimit + "%");
+                            }
                         }
                     });
                 } catch (final Exception e) {
@@ -520,6 +608,38 @@ public class MainActivity extends Activity {
             return "本地音乐";
         }
         return pkg;
+    }
+
+    private GradientDrawable rounded(int fill, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setStroke(dp(1), stroke);
+        drawable.setCornerRadius(dp(8));
+        return drawable;
+    }
+
+    private Button styledButton(String label, int heightDp) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(14);
+        button.setTextColor(TEXT);
+        button.setAllCaps(false);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(0, 0, 0, 0);
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(rounded(PANEL, BORDER));
+        button.setHeight(dp(heightDp));
+        return button;
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextSize(12);
+        label.setTextColor(MUTED);
+        label.setPadding(0, dp(14), 0, dp(6));
+        return label;
     }
 
     private void hideKeyboard() {

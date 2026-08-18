@@ -7,7 +7,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RemoteService extends Service {
     public static final int PORT = 8080;
@@ -16,6 +20,20 @@ public class RemoteService extends Service {
     private HttpServer httpServer;
     private DiscoveryBeacon beacon;
     private CursorOverlay cursorOverlay;
+    private final Handler mainHandler = new Handler();
+    private ExecutorService helperExecutor;
+    private final Runnable helperWatchdog = new Runnable() {
+        @Override
+        public void run() {
+            helperExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    RootInputHelper.ensureRunning(RemoteService.this);
+                }
+            });
+            mainHandler.postDelayed(this, 5000);
+        }
+    };
 
     public static MediaControl getMediaControl() {
         return mediaControl;
@@ -36,6 +54,9 @@ public class RemoteService extends Service {
         beacon.start();
 
         mediaControl.start();
+
+        helperExecutor = Executors.newSingleThreadExecutor();
+        mainHandler.post(helperWatchdog);
     }
 
     @Override
@@ -58,6 +79,11 @@ public class RemoteService extends Service {
         if (cursorOverlay != null) {
             cursorOverlay.stop();
             cursorOverlay = null;
+        }
+        mainHandler.removeCallbacks(helperWatchdog);
+        if (helperExecutor != null) {
+            helperExecutor.shutdownNow();
+            helperExecutor = null;
         }
         super.onDestroy();
     }
